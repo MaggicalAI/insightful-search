@@ -156,7 +156,38 @@
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background-color: var(--color-paper);
+    background-image:
+      radial-gradient(at 18% 12%, color-mix(in oklab, #e7b5ea 38%, transparent) 0%, transparent 42%),
+      radial-gradient(at 84% 22%, color-mix(in oklab, #f4a955 34%, transparent) 0%, transparent 44%),
+      radial-gradient(at 72% 88%, color-mix(in oklab, #e25b4d 24%, transparent) 0%, transparent 48%),
+      radial-gradient(at 12% 80%, color-mix(in oklab, #e7b5ea 22%, transparent) 0%, transparent 46%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+@utility mesh-soft {
+  background-image:
+    radial-gradient(at 0% 0%, color-mix(in oklab, #e7b5ea 50%, transparent) 0%, transparent 55%),
+    radial-gradient(at 100% 0%, color-mix(in oklab, #f4a955 45%, transparent) 0%, transparent 55%),
+    radial-gradient(at 50% 100%, color-mix(in oklab, #e25b4d 30%, transparent) 0%, transparent 60%);
+}
+
+@utility fade-rise {
+  animation: fade-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes fade-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
