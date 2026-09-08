@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { DragEvent } from "react";
-import { useCallback, useRef, useState } from "react";
-import { File as FileIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Loader2, Paperclip, Send } from "lucide-react";
 
 type DocState = {
   name: string;
@@ -12,27 +11,36 @@ type DocState = {
 type Result = {
   chunk: string;
   index: number;
+  page?: number;
   score: number;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+type Message = {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  score?: number;
+  chunkIndex?: number;
+  page?: number;
+  error?: boolean;
+};
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8001";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      {
-        title: "Semantic Search - find answers in your documents",
-      },
+      { title: "Insightful - chat with your documents" },
       {
         name: "description",
         content:
-          "Upload a document and ask a question. See the most relevant passage and its similarity score.",
+          "Drop in a document, then ask questions in a conversation. Insightful surfaces the most relevant passage with a confidence score.",
       },
-      { property: "og:title", content: "Semantic Search" },
+      { property: "og:title", content: "Insightful" },
       {
         property: "og:description",
         content:
-          "Upload a document and ask a question. See the most relevant passage and its similarity score.",
+          "Drop in a document, then ask questions in a conversation. Insightful surfaces the most relevant passage with a confidence score.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -43,203 +51,264 @@ export const Route = createFileRoute("/")({
 
 function SemanticSearch() {
   const [doc, setDoc] = useState<DocState | null>(null);
-  const [question, setQuestion] = useState("");
   const [indexing, setIndexing] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const [error, setError] = useState("");
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const idRef = useRef(0);
+
+  const nextId = () => ++idRef.current;
+
+  // Keep the thread scrolled to the newest message.
+  useEffect(() => {
+    const el = threadRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, indexing]);
 
   const ingest = useCallback(async (file: globalThis.File) => {
     setIndexing(true);
-    setError("");
-    setResult(null);
-
     const formData = new FormData();
     formData.append("file", file);
-
     try {
-      const response = await fetch(`${API_BASE_URL}/index`, {
+      const res = await fetch(`${API_BASE_URL}/index`, {
         method: "POST",
         body: formData,
       });
-      const data = await response.json();
-
-      if (!response.ok) {
+      const data = await res.json();
+      if (!res.ok) {
         throw new Error(data.error ?? "Failed to index document.");
       }
-
       setDoc({ name: data.filename, size: file.size, chunks: data.chunks });
+      setMessages([]);
     } catch (err) {
-      setDoc(null);
-      setError(err instanceof Error ? err.message : "Failed to index document.");
+      setMessages((m) => [
+        ...m,
+        {
+          id: nextId(),
+          role: "assistant",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Could not index that document. Is the backend running?",
+          error: true,
+        },
+      ]);
     } finally {
       setIndexing(false);
     }
   }, []);
 
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file) ingest(file);
-  };
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file) ingest(file);
+    },
+    [ingest],
+  );
 
   const runSearch = async () => {
-    if (!doc || !question.trim()) return;
-
-    setSearching(true);
-    setResult(null);
-    setError("");
-
+    const q = question.trim();
+    if (!q || !doc || busy) return;
+    setQuestion("");
+    setBusy(true);
+    const userMsg: Message = { id: nextId(), role: "user", text: q };
+    setMessages((m) => [...m, userMsg]);
     try {
-      const response = await fetch(`${API_BASE_URL}/search`, {
+      const res = await fetch(`${API_BASE_URL}/search`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ question }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
       });
-      const data = await response.json();
-
-      if (!response.ok) {
+      const data = await res.json();
+      if (!res.ok) {
         throw new Error(data.error ?? "Search failed.");
       }
-
-      setResult(data);
+      const result = data as Result;
+      setMessages((m) => [
+        ...m,
+        {
+          id: nextId(),
+          role: "assistant",
+          text: result.chunk,
+          score: result.score,
+          chunkIndex: result.index,
+          page: result.page,
+        },
+      ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed.");
+      setMessages((m) => [
+        ...m,
+        {
+          id: nextId(),
+          role: "assistant",
+          text: err instanceof Error ? err.message : "Something went wrong while searching.",
+          error: true,
+        },
+      ]);
     } finally {
-      setSearching(false);
+      setBusy(false);
     }
   };
 
-  const scoreLabel = (score: number) =>
-    score >= 0.85 ? "high" : score >= 0.6 ? "medium" : "low";
+  const fileExt = doc?.name.split(".").pop()?.toUpperCase();
 
   return (
-    <main className="min-h-screen px-6 py-14 sm:py-20">
-      <div className="mx-auto w-full max-w-2xl">
-        <section
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          className={[
-            "grad-border relative mb-8 rounded-2xl p-7 transition-shadow",
-            dragging ? "ring-2 ring-coral/25" : "",
-          ].join(" ")}
-        >
+    <main className="app-shell mx-auto flex h-screen max-w-5xl flex-col px-4 sm:px-8">
+      {/* Thread */}
+      <div
+        ref={threadRef}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className="chat-thread flex-1 overflow-y-auto py-8 sm:py-10"
+      >
+        {!doc && messages.length === 0 && (
+          <div className="mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center text-center">
+            <h1 className="font-display text-3xl font-medium tracking-[-0.035em] text-ink sm:text-4xl">
+              Ask about your document.
+            </h1>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-ink-soft">
+              Upload a PDF or text file, then ask a question to find the right passage.
+            </p>
+          </div>
+        )}
+
+        {messages.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {messages.map((m) =>
+              m.role === "user" ? (
+                <div key={m.id} className="flex justify-end">
+                  <div className="bubble-user max-w-[80%] px-4 py-3 text-[15px] leading-relaxed">
+                    {m.text}
+                  </div>
+                </div>
+              ) : (
+                <div key={m.id} className="flex justify-start">
+                  <div className="answer-card max-w-[88%] px-5 py-4 sm:px-6 sm:py-5">
+                    {m.error ? (
+                      <p className="text-[15px] leading-relaxed text-coral">{m.text}</p>
+                    ) : (
+                      <>
+                        <div className="mb-3 text-xs font-medium text-ink-faint">
+                          Source passage
+                        </div>
+                        <p className="text-[15px] leading-relaxed text-ink/85">{m.text}</p>
+                        {typeof m.score === "number" && (
+                          <div className="mt-3 flex items-center gap-3">
+                            <span className="font-display text-sm font-semibold tabular-nums text-ink">
+                              {(m.score * 100).toFixed(0)}% match
+                            </span>
+                            <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+                              <div
+                                className="score-fill h-full rounded-full transition-all duration-700"
+                                style={{ width: `${Math.round(m.score * 100)}%` }}
+                              />
+                            </div>
+                            <span className="shrink-0 text-xs text-ink-faint">
+                              {typeof m.page === "number"
+                                ? `page ${m.page}`
+                                : typeof m.chunkIndex === "number"
+                                  ? `passage ${m.chunkIndex + 1}`
+                                  : "confidence"}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ),
+            )}
+          </div>
+        )}
+
+        {indexing && (
+          <div className="flex items-center gap-2 py-2 text-sm text-ink-faint">
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+            Indexing document...
+          </div>
+        )}
+
+        {busy && (
+          <div className="flex justify-start">
+            <div className="answer-card flex items-center gap-1.5 px-5 py-4">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-ink-faint/50" />
+              <span
+                className="h-2 w-2 animate-bounce rounded-full bg-ink-faint/50"
+                style={{ animationDelay: "0.12s" }}
+              />
+              <span
+                className="h-2 w-2 animate-bounce rounded-full bg-ink-faint/50"
+                style={{ animationDelay: "0.24s" }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Composer */}
+      <div className="composer-wrap py-4 sm:py-5">
+        <div className="composer grad-ring-soft flex items-center gap-2 rounded-2xl p-2.5">
           <input
             ref={inputRef}
             type="file"
             accept=".pdf,.txt,text/plain,application/pdf"
             className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) ingest(file);
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) ingest(f);
             }}
           />
-          {!doc ? (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={indexing}
-              className="flex w-full flex-col items-center gap-2 text-center disabled:cursor-wait"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-white/70">
-                <FileIcon className="h-5 w-5 text-ink-soft" strokeWidth={1.5} />
-              </span>
-              <span className="font-display text-2xl text-ink">
-                {indexing ? "Indexing document" : "Drop a PDF or text file"}
-              </span>
-              <span className="font-sans text-sm text-ink-soft">
-                {indexing ? "creating embeddings" : "or click to browse"}
-              </span>
-            </button>
-          ) : (
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="truncate font-display text-xl text-ink">{doc.name}</p>
-                <p className="mt-0.5 font-sans text-sm text-ink-soft">
-                  {doc.chunks} chunks indexed - {(doc.size / 1024).toFixed(1)} KB
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                className="shrink-0 font-sans text-sm text-ink-soft underline-offset-4 hover:text-coral hover:underline"
-              >
-                replace
-              </button>
-            </div>
-          )}
-        </section>
-
-        <section className="mb-8">
-          <label
-            htmlFor="search-input"
-            className="mb-2 block font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft"
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={indexing}
+            aria-label="Attach a document"
+            title={doc ? "Replace document" : "Attach a document"}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-ink-soft transition-colors hover:bg-zinc-100 hover:text-ink disabled:cursor-wait disabled:opacity-40"
           >
-            Ask a question
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input
-              id="search-input"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && runSearch()}
-              placeholder="What is this document about?"
-              className="flex-1 rounded-xl border border-line bg-white/50 px-4 py-3 font-sans text-base text-ink placeholder:text-ink-soft/60 focus:border-coral/50 focus:outline-none focus:ring-2 focus:ring-coral/15"
-            />
-            <button
-              type="button"
-              onClick={runSearch}
-              disabled={!doc || !question.trim() || searching || indexing}
-              className="btn-gradient rounded-xl px-6 py-3 font-sans text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {searching ? "searching..." : "search"}
-            </button>
-          </div>
-        </section>
+            {indexing ? (
+              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={1.8} />
+            ) : doc ? (
+              <Check className="h-5 w-5 text-green-600" strokeWidth={2} />
+            ) : (
+              <Paperclip className="h-5 w-5" strokeWidth={1.8} />
+            )}
+          </button>
 
-        {error && (
-          <p className="mb-8 rounded-xl border border-coral/20 bg-white/60 px-4 py-3 font-sans text-sm text-coral">
-            {error}
-          </p>
-        )}
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+            placeholder={
+              doc ? "Ask a question about your document..." : "Attach a document to start"
+            }
+            className="min-w-0 flex-1 bg-transparent px-1 text-[15px] text-ink outline-none placeholder:text-ink-faint"
+            disabled={!doc}
+          />
 
-        {result && (
-          <section className="fade-rise rounded-2xl border border-line bg-white/55 p-6">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-                Most relevant - chunk {result.index + 1}
-              </span>
-              <span className="flex items-baseline gap-2">
-                <span className="font-display text-2xl text-ink">
-                  {result.score.toFixed(2)}
-                </span>
-                <span className="font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-                  {scoreLabel(result.score)} match
-                </span>
-              </span>
-            </div>
-            <div className="mb-4 h-1 overflow-hidden rounded-full bg-line">
-              <div
-                className="h-full rounded-full bg-coral/55 transition-all duration-500"
-                style={{ width: `${Math.round(result.score * 100)}%` }}
-              />
-            </div>
-            <p className="font-sans text-[15px] leading-relaxed text-ink">{result.chunk}</p>
-          </section>
-        )}
-
-        {!result && doc && !searching && !error && (
-          <p className="text-center font-sans text-sm text-ink-soft">
-            Type a question and press search.
+          <button
+            type="button"
+            onClick={runSearch}
+            disabled={!doc || !question.trim() || busy}
+            aria-label="Send"
+            className="send-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#3a3638] text-white transition-all hover:bg-[#2f2b2d] disabled:cursor-not-allowed disabled:opacity-30 active:scale-95"
+          >
+            <Send className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        {doc && (
+          <p className="mt-2 flex items-center justify-between px-1 text-xs text-ink-faint">
+            {doc.name} - {doc.chunks} indexed passages
+            <span className="hidden sm:inline">Press Enter to search</span>
           </p>
         )}
       </div>

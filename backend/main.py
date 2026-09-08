@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from chunker import chunk_text
-from document_loader import extract_text
+from document_loader import extract_pages
 from embeddings import create_embedding
 from search import find_best_chunk
 from storage import load_records, save_records
@@ -12,21 +12,25 @@ load_dotenv()
 
 
 def index_file(file_path: str) -> list[dict]:
-    text = extract_text(file_path)
-    chunks = chunk_text(text)
+    pages = extract_pages(file_path)
+    records = []
 
-    if not chunks:
+    for page in pages:
+        chunks = chunk_text(page["text"])
+        for chunk in chunks:
+            records.append(
+                {
+                    "index": len(records),
+                    "page": page["page"],
+                    "text": chunk,
+                    "embedding": create_embedding(chunk),
+                    "source": Path(file_path).name,
+                }
+            )
+
+    if not records:
         raise ValueError("No text could be extracted from this document.")
 
-    records = [
-        {
-            "index": index,
-            "text": chunk,
-            "embedding": create_embedding(chunk),
-            "source": Path(file_path).name,
-        }
-        for index, chunk in enumerate(chunks)
-    ]
     save_records(records)
     return records
 
@@ -42,7 +46,10 @@ def main() -> None:
             break
 
         result = find_best_chunk(question, load_records())
-        print(f"\nBest match, chunk {result['index'] + 1}, score {result['score']:.4f}:")
+        print(
+            f"\nBest match, page {result['page']}, chunk {result['index'] + 1}, "
+            f"score {result['score']:.4f}:"
+        )
         print(result["chunk"])
 
 

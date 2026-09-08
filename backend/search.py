@@ -1,4 +1,5 @@
 import math
+import re
 
 from embeddings import create_embedding
 
@@ -18,6 +19,12 @@ def find_best_chunk(question: str, records: list[dict]) -> dict:
     if not records:
         raise ValueError("No document has been indexed yet.")
 
+    page_number = _requested_page_number(question)
+    if page_number is not None:
+        page_records = [record for record in records if record.get("page") == page_number]
+        if page_records:
+            return _format_result(page_records[0], 1.0)
+
     question_embedding = create_embedding(question)
     best_record = None
     best_score = -1.0
@@ -31,8 +38,26 @@ def find_best_chunk(question: str, records: list[dict]) -> dict:
     if best_record is None:
         raise ValueError("No matching chunk was found.")
 
+    return _format_result(best_record, best_score)
+
+
+def _requested_page_number(question: str) -> int | None:
+    normalized = question.lower()
+
+    if "first page" in normalized or "page one" in normalized:
+        return 1
+
+    match = re.search(r"\bpage(?:\s+number|\s+no\.?)?\s+(\d+)\b", normalized)
+    if match:
+        return int(match.group(1))
+
+    return None
+
+
+def _format_result(record: dict, score: float) -> dict:
     return {
-        "chunk": best_record["text"],
-        "index": best_record["index"],
-        "score": round(best_score, 4),
+        "chunk": record["text"],
+        "index": record["index"],
+        "page": record.get("page"),
+        "score": round(score, 4),
     }

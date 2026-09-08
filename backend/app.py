@@ -7,15 +7,22 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from chunker import chunk_text
-from document_loader import extract_text
+from document_loader import extract_pages
 from embeddings import create_embedding
 from search import find_best_chunk
 from storage import load_records, save_records
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt"}
+DEFAULT_FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
 
 app = Flask(__name__)
-CORS(app, origins=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"))
+frontend_origins = os.getenv("FRONTEND_ORIGINS")
+CORS(app, origins=frontend_origins.split(",") if frontend_origins else DEFAULT_FRONTEND_ORIGINS)
 
 
 def _error(message: str, status_code: int = 400):
@@ -45,20 +52,25 @@ def index_document():
         uploaded_file.save(file_path)
 
         try:
-            text = extract_text(str(file_path))
-            chunks = chunk_text(text)
-            if not chunks:
+            pages = extract_pages(str(file_path))
+            records = []
+
+            for page in pages:
+                chunks = chunk_text(page["text"])
+                for chunk in chunks:
+                    records.append(
+                        {
+                            "index": len(records),
+                            "page": page["page"],
+                            "text": chunk,
+                            "embedding": create_embedding(chunk),
+                            "source": filename,
+                        }
+                    )
+
+            if not records:
                 return _error("No text could be extracted from this document.")
 
-            records = [
-                {
-                    "index": index,
-                    "text": chunk,
-                    "embedding": create_embedding(chunk),
-                    "source": filename,
-                }
-                for index, chunk in enumerate(chunks)
-            ]
             save_records(records)
         except Exception as exc:
             return _error(str(exc), 500)
@@ -89,4 +101,4 @@ def search_document():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=int(os.getenv("PORT", "8000")), debug=True)
+    app.run(host="127.0.0.1", port=int(os.getenv("PORT", "8001")), debug=True)
