@@ -176,17 +176,17 @@
   background-image: linear-gradient(100deg, #e7b5ea 0%, #f4a955 52%, #e25b4d 100%);
 }
 
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @utility fade-rise {
   animation: fade-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-
-  @keyframes fade-rise {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
 }
