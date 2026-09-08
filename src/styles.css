@@ -5,6 +5,25 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * Semantic Search — soft, minimalist design system.
+ * Brand wash: iris (purple) #E7B5EA · coral (red) #E25B4D · saffron (orange) #F4A955
+ */
+
+@theme inline {
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-iris: #e7b5ea;
+  --color-coral: #e25b4d;
+  --color-saffron: #f4a955;
+
+  --color-ink: oklch(0.27 0.02 40);
+  --color-ink-soft: oklch(0.42 0.02 40);
+  --color-paper: oklch(0.985 0.006 60);
+  --color-line: oklch(0.9 0.01 60);
+}
+
+/*
  * Design system definition.
  *
  * The @theme inline block maps CSS custom properties to Tailwind utility
@@ -138,7 +157,36 @@
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background-color: #fbf6f2;
+    background-image:
+      radial-gradient(at 16% 8%, color-mix(in oklab, #e7b5ea 62%, transparent) 0%, transparent 46%),
+      radial-gradient(at 88% 14%, color-mix(in oklab, #f4a955 55%, transparent) 0%, transparent 48%),
+      radial-gradient(at 78% 92%, color-mix(in oklab, #e25b4d 42%, transparent) 0%, transparent 50%),
+      radial-gradient(at 8% 86%, color-mix(in oklab, #e7b5ea 40%, transparent) 0%, transparent 48%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+}
+
+/* Solid, readable gradient for CTAs + score bars. */
+@utility btn-gradient {
+  background-image: linear-gradient(100deg, #e7b5ea 0%, #f4a955 52%, #e25b4d 100%);
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility fade-rise {
+  animation: fade-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
