@@ -222,7 +222,7 @@ function SemanticSearch() {
               type="button"
               onClick={runSearch}
               disabled={!doc || !question.trim() || searching}
-              className="mesh-soft rounded-xl px-6 py-3 font-sans text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn-gradient rounded-xl px-6 py-3 font-sans text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
               {searching ? "searching…" : "search"}
             </button>
@@ -247,7 +247,7 @@ function SemanticSearch() {
             </div>
             <div className="mb-4 h-1 overflow-hidden rounded-full bg-line">
               <div
-                className="mesh-soft h-full rounded-full transition-all duration-500"
+                className="btn-gradient h-full rounded-full transition-all duration-500"
                 style={{ width: `${Math.round(result.score * 100)}%` }}
               />
             </div>
