@@ -5,6 +5,24 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * Semantic Search — soft, minimalist design system.
+ * Brand wash: iris (purple) #E7B5EA · coral (red) #E25B4D · saffron (orange) #F4A955
+ */
+
+@theme inline {
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-iris: #e7b5ea;
+  --color-coral: #e25b4d;
+  --color-saffron: #f4a955;
+
+  --color-ink: oklch(0.27 0.02 40);
+  --color-ink-soft: oklch(0.42 0.02 40);
+  --color-paper: oklch(0.985 0.006 60);
+  --color-line: oklch(0.9 0.01 60);
+
+/*
  * Design system definition.
  *
  * The @theme inline block maps CSS custom properties to Tailwind utility
