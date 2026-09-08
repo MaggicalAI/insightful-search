@@ -137,16 +137,6 @@ function SemanticSearch() {
   return (
     <main className="min-h-screen px-6 py-14 sm:py-20">
       <div className="mx-auto w-full max-w-2xl">
-        {/* Wordmark */}
-        <header className="mb-14 flex items-center justify-between">
-          <h1 className="font-display text-2xl text-ink">
-            semantic<span className="text-coral">.</span>search
-          </h1>
-          <span className="font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-            mock · client-side
-          </span>
-        </header>
-
         {/* Upload */}
         <section
           onDragOver={(e) => {
@@ -156,8 +146,8 @@ function SemanticSearch() {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={[
-            "relative mb-8 rounded-2xl border border-dashed p-7 transition-colors",
-            dragging ? "border-coral/70 bg-coral/5" : "border-line bg-white/40",
+            "grad-border relative mb-8 rounded-2xl p-7 transition-shadow",
+            dragging ? "ring-2 ring-coral/25" : "",
           ].join(" ")}
         >
           <input
@@ -247,7 +237,7 @@ function SemanticSearch() {
             </div>
             <div className="mb-4 h-1 overflow-hidden rounded-full bg-line">
               <div
-                className="btn-gradient h-full rounded-full transition-all duration-500"
+                className="h-full rounded-full bg-coral/55 transition-all duration-500"
                 style={{ width: `${Math.round(result.score * 100)}%` }}
               />
             </div>
@@ -263,9 +253,6 @@ function SemanticSearch() {
           </p>
         )}
 
-        <footer className="mt-16 text-center font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft/70">
-          demo interface · no data leaves your browser
-        </footer>
       </div>
     </main>
   );
