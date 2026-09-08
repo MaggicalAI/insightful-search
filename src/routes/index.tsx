@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { DragEvent } from "react";
 import { useCallback, useRef, useState } from "react";
+import { File as FileIcon } from "lucide-react";
 
 type DocState = {
   name: string;
   size: number;
-  chunks: string[];
+  chunks: number;
 };
 
 type Result = {
@@ -13,11 +15,13 @@ type Result = {
   score: number;
 };
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "Semantic Search — find answers in your documents",
+        title: "Semantic Search - find answers in your documents",
       },
       {
         name: "description",
@@ -37,110 +41,89 @@ export const Route = createFileRoute("/")({
   component: SemanticSearch,
 });
 
-const STOP = new Set([
-  "the","a","an","and","or","but","of","to","in","on","for","is","are","was","were",
-  "be","been","being","it","this","that","with","as","at","by","from","into","your",
-  "you","i","what","how","why","when","which","do","does","did","can","could","will",
-  "would","should","not","no","yes","if","then","than","so","such","also","about",
-]);
-
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP.has(w));
-}
-
-// Split raw text into ~chunkSize-char passages on sentence / word boundaries.
-function makeChunks(text: string, chunkSize = 320): string[] {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return [];
-  const sentences = clean.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) ?? [clean];
-  const chunks: string[] = [];
-  let buf = "";
-  for (const s of sentences) {
-    const piece = s.trim();
-    if ((buf + " " + piece).trim().length > chunkSize && buf) {
-      chunks.push(buf.trim());
-      buf = piece;
-    } else {
-      buf = (buf + " " + piece).trim();
-    }
-  }
-  if (buf.trim()) chunks.push(buf.trim());
-  return chunks;
-}
-
-// Mock cosine-like similarity from term overlap.
-function similarity(query: string, chunk: string): number {
-  const a = tokenize(query);
-  const b = tokenize(chunk);
-  if (!a.length || !b.length) return 0;
-  const sb = new Set(b);
-  const shared = a.filter((w) => sb.has(w)).length;
-  const raw = shared / Math.sqrt(a.length * b.length);
-  // gentle curve so partial overlap still reads as a plausible score
-  return Math.round((0.35 + raw * 0.65) * 100) / 100;
-}
-
 function SemanticSearch() {
   const [doc, setDoc] = useState<DocState | null>(null);
   const [question, setQuestion] = useState("");
+  const [indexing, setIndexing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const ingest = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : "";
-      const isText =
-        file.type === "text/plain" ||
-        file.name.toLowerCase().endsWith(".txt");
-      const chunks = isText && text.trim()
-        ? makeChunks(text)
-        : makeChunks(MOCK_PASSAGE.repeat(Math.max(1, Math.ceil(file.size / 900))));
-      setDoc({ name: file.name, size: file.size, chunks });
-      setResult(null);
-    };
-    reader.readAsText(file);
+  const ingest = useCallback(async (file: globalThis.File) => {
+    setIndexing(true);
+    setError("");
+    setResult(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/index`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to index document.");
+      }
+
+      setDoc({ name: data.filename, size: file.size, chunks: data.chunks });
+    } catch (err) {
+      setDoc(null);
+      setError(err instanceof Error ? err.message : "Failed to index document.");
+    } finally {
+      setIndexing(false);
+    }
   }, []);
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
+  const onDrop = (event: DragEvent) => {
+    event.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files?.[0];
+    const file = event.dataTransfer.files?.[0];
     if (file) ingest(file);
   };
 
-  const runSearch = () => {
+  const runSearch = async () => {
     if (!doc || !question.trim()) return;
+
     setSearching(true);
     setResult(null);
-    // mock latency
-    setTimeout(() => {
-      let best: Result | null = null;
-      doc.chunks.forEach((chunk, index) => {
-        const score = similarity(question, chunk);
-        if (!best || score > best.score) best = { chunk, index, score };
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/search`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ question }),
       });
-      setResult(best);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Search failed.");
+      }
+
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Search failed.");
+    } finally {
       setSearching(false);
-    }, 420);
+    }
   };
 
-  const scoreLabel = (s: number) =>
-    s >= 0.85 ? "high" : s >= 0.6 ? "medium" : "low";
+  const scoreLabel = (score: number) =>
+    score >= 0.85 ? "high" : score >= 0.6 ? "medium" : "low";
 
   return (
     <main className="min-h-screen px-6 py-14 sm:py-20">
       <div className="mx-auto w-full max-w-2xl">
-        {/* Upload */}
         <section
-          onDragOver={(e) => {
-            e.preventDefault();
+          onDragOver={(event) => {
+            event.preventDefault();
             setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
@@ -155,33 +138,34 @@ function SemanticSearch() {
             type="file"
             accept=".pdf,.txt,text/plain,application/pdf"
             className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) ingest(f);
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) ingest(file);
             }}
           />
           {!doc ? (
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center gap-2 text-center"
+              disabled={indexing}
+              className="flex w-full flex-col items-center gap-2 text-center disabled:cursor-wait"
             >
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-white/70">
+                <FileIcon className="h-5 w-5 text-ink-soft" strokeWidth={1.5} />
+              </span>
               <span className="font-display text-2xl text-ink">
-                drop a document
+                {indexing ? "Indexing document" : "Drop a PDF or text file"}
               </span>
               <span className="font-sans text-sm text-ink-soft">
-                PDF or TXT · or click to browse
+                {indexing ? "creating embeddings" : "or click to browse"}
               </span>
             </button>
           ) : (
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="truncate font-display text-xl text-ink">
-                  {doc.name}
-                </p>
+                <p className="truncate font-display text-xl text-ink">{doc.name}</p>
                 <p className="mt-0.5 font-sans text-sm text-ink-soft">
-                  {doc.chunks.length} chunks indexed ·{" "}
-                  {(doc.size / 1024).toFixed(1)} KB
+                  {doc.chunks} chunks indexed - {(doc.size / 1024).toFixed(1)} KB
                 </p>
               </div>
               <button
@@ -195,36 +179,44 @@ function SemanticSearch() {
           )}
         </section>
 
-        {/* Question */}
         <section className="mb-8">
-          <label className="mb-2 block font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-            ask a question
+          <label
+            htmlFor="search-input"
+            className="mb-2 block font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft"
+          >
+            Ask a question
           </label>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
+              id="search-input"
               value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && runSearch()}
               placeholder="What is this document about?"
               className="flex-1 rounded-xl border border-line bg-white/50 px-4 py-3 font-sans text-base text-ink placeholder:text-ink-soft/60 focus:border-coral/50 focus:outline-none focus:ring-2 focus:ring-coral/15"
             />
             <button
               type="button"
               onClick={runSearch}
-              disabled={!doc || !question.trim() || searching}
+              disabled={!doc || !question.trim() || searching || indexing}
               className="btn-gradient rounded-xl px-6 py-3 font-sans text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {searching ? "searching…" : "search"}
+              {searching ? "searching..." : "search"}
             </button>
           </div>
         </section>
 
-        {/* Result */}
+        {error && (
+          <p className="mb-8 rounded-xl border border-coral/20 bg-white/60 px-4 py-3 font-sans text-sm text-coral">
+            {error}
+          </p>
+        )}
+
         {result && (
           <section className="fade-rise rounded-2xl border border-line bg-white/55 p-6">
             <div className="mb-3 flex items-center justify-between">
               <span className="font-sans text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-                most relevant · chunk {result.index + 1}
+                Most relevant - chunk {result.index + 1}
               </span>
               <span className="flex items-baseline gap-2">
                 <span className="font-display text-2xl text-ink">
@@ -241,25 +233,16 @@ function SemanticSearch() {
                 style={{ width: `${Math.round(result.score * 100)}%` }}
               />
             </div>
-            <p className="font-sans text-[15px] leading-relaxed text-ink">
-              {result.chunk}
-            </p>
+            <p className="font-sans text-[15px] leading-relaxed text-ink">{result.chunk}</p>
           </section>
         )}
 
-        {!result && doc && !searching && (
+        {!result && doc && !searching && !error && (
           <p className="text-center font-sans text-sm text-ink-soft">
-            type a question and press search.
+            Type a question and press search.
           </p>
         )}
-
       </div>
     </main>
   );
 }
-
-const MOCK_PASSAGE =
-  "Semantic search ranks passages by meaning rather than keyword match. " +
-  "Documents are split into overlapping chunks, each turned into a vector embedding. " +
-  "When you ask a question, it is embedded the same way and compared to every chunk. " +
-  "The closest chunk by cosine similarity is returned as the answer, with its score. ";

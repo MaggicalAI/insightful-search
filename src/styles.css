@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Semantic Search — soft, minimalist design system.
- * Brand wash: iris (purple) #E7B5EA · coral (red) #E25B4D · saffron (orange) #F4A955
+ * Semantic Search - soft, minimalist design system.
+ * Brand wash: iris (purple) #E7B5EA, coral (red) #E25B4D, saffron (orange) #F4A955
  */
 
 @theme inline {
