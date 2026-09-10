@@ -93,6 +93,14 @@ GEMINI_EMBEDDING_MODEL=text-embedding-004
 
 Do not commit `.env` files. They are for local secrets only.
 
+The backend also allows the Lovable frontend:
+
+```env
+FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8082,http://127.0.0.1:8082,https://embeddings-jeen.lovable.app
+```
+
+That means the deployed site at `https://embeddings-jeen.lovable.app/` can call the backend without being blocked by CORS.
+
 ## Run The App
 
 Start the backend:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 
 from chunker import chunk_text
@@ -12,17 +13,27 @@ from embeddings import create_embedding
 from search import find_best_chunk
 from storage import load_records, save_records
 
+load_dotenv()
+
 ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 DEFAULT_FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+    "http://localhost:8082",
+    "http://127.0.0.1:8082",
+    "https://embeddings-jeen.lovable.app",
 ]
 
 app = Flask(__name__)
 frontend_origins = os.getenv("FRONTEND_ORIGINS")
-CORS(app, origins=frontend_origins.split(",") if frontend_origins else DEFAULT_FRONTEND_ORIGINS)
+CORS(
+    app,
+    origins=[origin.strip() for origin in frontend_origins.split(",")] if frontend_origins else DEFAULT_FRONTEND_ORIGINS,
+)
 
 
 def _error(message: str, status_code: int = 400):

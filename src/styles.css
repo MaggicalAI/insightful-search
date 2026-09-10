@@ -210,11 +210,8 @@
   width: 100%;
 }
 
-@utility answer-card {
-  background: color-mix(in oklab, white 84%, #f4f1f5);
-  border: 1px solid color-mix(in oklab, #e9e6e8 92%, transparent);
-  border-radius: 1.25rem 1.25rem 1.25rem 0.35rem;
-  box-shadow: 0 8px 24px color-mix(in oklab, #2a1040 5%, transparent);
+@utility assistant-message {
+  color: var(--color-ink);
 }
 
 @utility composer-wrap {
@@ -228,9 +225,9 @@
 
 /* ---- User message bubble. ---- */
 @utility bubble-user {
-  background: oklch(0.21 0.018 40);
+  background: #3a3638;
   color: oklch(0.99 0.005 60);
-  border-radius: 1rem 1rem 0.25rem 1rem;
+  border-radius: 1.25rem;
 }
 
 /* ---- Assistant message bubble (soft tint, no loud color). ---- */
@@ -242,6 +239,10 @@
 
 /* ---- Score bar with a restrained brand tint. ---- */
 @utility score-fill {
+  background: linear-gradient(90deg, #e7b5ea 0%, #f4a955 55%, #e25b4d 100%);
+}
+
+@utility index-progress-fill {
   background: linear-gradient(90deg, #e7b5ea 0%, #f4a955 55%, #e25b4d 100%);
 }
 

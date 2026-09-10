@@ -55,7 +55,7 @@ function SemanticSearch() {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [dragging, setDragging] = useState(false);
+  const [indexProgress, setIndexProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(0);
@@ -70,20 +70,52 @@ function SemanticSearch() {
 
   const ingest = useCallback(async (file: globalThis.File) => {
     setIndexing(true);
+    setIndexProgress(3);
     const formData = new FormData();
     formData.append("file", file);
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
+
     try {
-      const res = await fetch(`${API_BASE_URL}/index`, {
-        method: "POST",
-        body: formData,
+      progressTimer = setInterval(() => {
+        setIndexProgress((current) => (current < 92 ? current + 2 : current));
+      }, 450);
+
+      const data = await new Promise<{ filename: string; chunks: number }>((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", `${API_BASE_URL}/index`);
+
+        request.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const uploadPercent = Math.round((event.loaded / event.total) * 70);
+          setIndexProgress(Math.max(5, uploadPercent));
+        };
+
+        request.onload = () => {
+          let payload: { filename: string; chunks: number; error?: string };
+          try {
+            payload = JSON.parse(request.responseText);
+          } catch {
+            reject(new Error("Backend returned an invalid response."));
+            return;
+          }
+
+          if (request.status < 200 || request.status >= 300) {
+            reject(new Error(payload.error ?? "Failed to index document."));
+            return;
+          }
+
+          resolve(payload);
+        };
+
+        request.onerror = () => reject(new Error("Could not reach the backend."));
+        request.send(formData);
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to index document.");
-      }
+
+      setIndexProgress(100);
       setDoc({ name: data.filename, size: file.size, chunks: data.chunks });
       setMessages([]);
     } catch (err) {
+      setIndexProgress(0);
       setMessages((m) => [
         ...m,
         {
@@ -97,6 +129,7 @@ function SemanticSearch() {
         },
       ]);
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       setIndexing(false);
     }
   }, []);
@@ -104,7 +137,6 @@ function SemanticSearch() {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      setDragging(false);
       const file = e.dataTransfer.files?.[0];
       if (file) ingest(file);
     },
@@ -115,6 +147,7 @@ function SemanticSearch() {
     const q = question.trim();
     if (!q || !doc || busy) return;
     setQuestion("");
+    setIndexProgress(0);
     setBusy(true);
     const userMsg: Message = { id: nextId(), role: "user", text: q };
     setMessages((m) => [...m, userMsg]);
@@ -155,8 +188,6 @@ function SemanticSearch() {
     }
   };
 
-  const fileExt = doc?.name.split(".").pop()?.toUpperCase();
-
   return (
     <main className="app-shell mx-auto flex h-screen max-w-5xl flex-col px-4 sm:px-8">
       {/* Thread */}
@@ -164,9 +195,7 @@ function SemanticSearch() {
         ref={threadRef}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragging(true);
         }}
-        onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className="chat-thread flex-1 overflow-y-auto py-8 sm:py-10"
       >
@@ -182,28 +211,25 @@ function SemanticSearch() {
         )}
 
         {messages.length > 0 && (
-          <div className="flex flex-col gap-4">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
             {messages.map((m) =>
               m.role === "user" ? (
                 <div key={m.id} className="flex justify-end">
-                  <div className="bubble-user max-w-[80%] px-4 py-3 text-[15px] leading-relaxed">
+                  <div className="bubble-user max-w-[82%] px-4 py-3 text-[15px] leading-relaxed">
                     {m.text}
                   </div>
                 </div>
               ) : (
                 <div key={m.id} className="flex justify-start">
-                  <div className="answer-card max-w-[88%] px-5 py-4 sm:px-6 sm:py-5">
+                  <div className="assistant-message w-full max-w-none px-1 py-1">
                     {m.error ? (
                       <p className="text-[15px] leading-relaxed text-coral">{m.text}</p>
                     ) : (
                       <>
-                        <div className="mb-3 text-xs font-medium text-ink-faint">
-                          Source passage
-                        </div>
-                        <p className="text-[15px] leading-relaxed text-ink/85">{m.text}</p>
+                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-ink/90">{m.text}</p>
                         {typeof m.score === "number" && (
-                          <div className="mt-3 flex items-center gap-3">
-                            <span className="font-display text-sm font-semibold tabular-nums text-ink">
+                          <div className="mt-4 flex items-center gap-3 border-t border-line/70 pt-3">
+                            <span className="text-xs font-medium tabular-nums text-ink-soft">
                               {(m.score * 100).toFixed(0)}% match
                             </span>
                             <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
@@ -230,16 +256,24 @@ function SemanticSearch() {
           </div>
         )}
 
-        {indexing && (
-          <div className="flex items-center gap-2 py-2 text-sm text-ink-faint">
-            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
-            Indexing document...
+        {(indexing || (indexProgress === 100 && messages.length === 0)) && (
+          <div className="mx-auto w-full max-w-xl py-2">
+            <div className="mb-2 flex items-center justify-between text-xs text-ink-faint">
+              <span>{indexProgress === 100 ? "Document ready" : "Indexing document"}</span>
+              <span className="tabular-nums">{indexProgress}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-line">
+              <div
+                className="index-progress-fill h-full rounded-full transition-all duration-500"
+                style={{ width: `${indexProgress}%` }}
+              />
+            </div>
           </div>
         )}
 
         {busy && (
-          <div className="flex justify-start">
-            <div className="answer-card flex items-center gap-1.5 px-5 py-4">
+          <div className="mx-auto flex w-full max-w-3xl justify-start">
+            <div className="assistant-message flex items-center gap-1.5 px-1 py-2">
               <span className="h-2 w-2 animate-bounce rounded-full bg-ink-faint/50" />
               <span
                 className="h-2 w-2 animate-bounce rounded-full bg-ink-faint/50"
